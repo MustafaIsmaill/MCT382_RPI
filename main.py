@@ -77,7 +77,7 @@ def move(x,y):
 	elif (x==-1) and (y==0):
 		ser.write(left.encode())
 	#stop
-	elif (x==-1) and (y==0):
+	elif (x==0) and (y==0):
 		ser.write(stop.encode())
 
 #direction string
