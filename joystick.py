@@ -48,6 +48,7 @@ while True:
 #		if buttons != 0:
 #     			for i in range(buttons):
 #        			getButton(i)
-		if hats != 0:
-      			for i in range(hats):
-        			getHat(i)
+#		if hats != 0:
+ #     			for i in range(hats):
+  #      			getHat(i)
+		print(joystick.get_hat(0)[0], joystick.get_hat(0)[1])

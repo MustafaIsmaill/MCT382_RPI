@@ -3,7 +3,7 @@
 
 import cv2
 import numpy as np
-import thread
+from threading import Thread
 import time
 import serial
 import pygame
@@ -113,6 +113,10 @@ frame_counter = -1
 
 # Define a function for the first thread
 def send_pwms():
+
+	global forward, backward, right, left, stop
+	global x1, x2, y1, y2, b, m, frame_counter, mode_state
+
 	while True:
 		for event in pygame.event.get():
 			x1 = joystick.get_hat(0)[0]
@@ -135,49 +139,76 @@ def send_pwms():
 
 # Define a function for the second thread
 def find_red_strap():
-	while mode_state == -1:
-		ret_val, image = cam.read()
 
-		frame_counter += 1
+	global frame_counter, initial_area, area, x2, y2
 
-		hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+	while True:
+		while mode_state == -1:
+			ret_val, image = cam.read()
 
-		redthreshold = cv2.inRange(hsv, redLower, redUpper)
-		reddishthreshold = cv2.inRange(hsv, reddishLower, reddishUpper)
+			frame_counter += 1
 
-		# red has hues between 0-10 and there are pinkish hues in the 200s so we combine both
-		output = cv2.bitwise_or(redthreshold, reddishthreshold)
+			hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
 
-		#dilate and erode
-		output = cv2.morphologyEx(output, cv2.MORPH_OPEN, kernelOpen)
-		output = cv2.morphologyEx(output, cv2.MORPH_CLOSE, kernelClose)
+			redthreshold = cv2.inRange(hsv, redLower, redUpper)
+			reddishthreshold = cv2.inRange(hsv, reddishLower, reddishUpper)
 
-		cnts, hierarchy = cv2.findContours(output, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+			# red has hues between 0-10 and there are pinkish hues in the 200s so we combine both
+			output = cv2.bitwise_or(redthreshold, reddishthreshold)
 
-		if len(cnts) != 0:
+			#dilate and erode
+			output = cv2.morphologyEx(output, cv2.MORPH_OPEN, kernelOpen)
+			output = cv2.morphologyEx(output, cv2.MORPH_CLOSE, kernelClose)
 
-			greatest_cnt = max(cnts, key = cv2.contourArea)
+			cnts, hierarchy = cv2.findContours(output, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
 
-			area = cv2.contourArea(greatest_cnt)
+			if len(cnts) != 0:
 
-			if frame_counter == 0:
-				initial_area = area
+				greatest_cnt = max(cnts, key = cv2.contourArea)
 
-			if area < initial_area:
-				x2 = 0
-				y2 = 1
-				print("moving forward")
-			else:
-				x2 = 0
-				y2 = 0
-				print("stop")
+				area = cv2.contourArea(greatest_cnt)
 
-			print(area, initial_area)
+				if frame_counter == 0:
+					initial_area = area
 
-#create two thread
-try:
-	thread.start_new_thread( find_red_strap, () )
-	thread.start_new_thread( send_pwms, () )
-except:
-	 print "Error: unable to start thread"
+				if area < initial_area:
+					x2 = 0
+					y2 = 1
+					print("moving forward")
+				else:
+					x2 = 0
+					y2 = 0
+					print("stop")
 
+				print(area, initial_area)
+
+#create two threads
+if __name__ == "__main__":
+
+	t1 = Thread(target = send_pwms)
+	t2 = Thread(target = find_red_strap)
+	t1.setDaemon(True)
+	t2.setDaemon(True)
+	t1.start()
+	t2.start()
+
+	while True:
+#		for event in pygame.event.get():
+#			x1 = joystick.get_hat(0)[0]
+#			y1 = joystick.get_hat(0)[1]
+#			b = joystick.get_button(2) #triangle button
+#			m = joystick.get_button(9) #mode
+
+#		if b == 1:
+#			set_leds() #toggle led
+#			time.sleep(0.2) #for button debounce
+#		if m == 1:
+#			frame_counter = -1
+#			mode_state *= -1
+#			time.sleep(0.2) #for button debounce
+
+#		if mode_state == 1:
+#			move(x1,y1)
+#		elif mode_state == -1:
+#			move(x2,y2)
+		pass
