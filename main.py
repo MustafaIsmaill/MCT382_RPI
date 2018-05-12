@@ -1,10 +1,14 @@
 # left analog  --> axis 1 = y value
 # right analog --> axis 3 = x value
 
+import cv2
+import numpy as np
+import thread
 import time
 import serial
 import pygame
 import os
+import RPi.GPIO as GPIO
 
 ser = serial.Serial(
                port='/dev/ttyACM0',
@@ -32,106 +36,34 @@ while True:
 		print("no joystick found")
 		time.sleep(5)
 
+#initialise joystick
 joystick.init()
 
-buttons = joystick.get_numbuttons()
-hats = joystick.get_numhats()
-axes = joystick.get_numaxes()
+#led pins
+ledPinR = 35
+ledPinL = 37
+#set led pins as output
+GPIO.setmode(GPIO.BOARD)
+GPIO.setup(ledPinR, GPIO.OUT)
+GPIO.setup(ledPinL, GPIO.OUT)
+#set leds as low
+GPIO.output(ledPinR, GPIO.LOW)
+GPIO.output(ledPinL, GPIO.LOW)
 
-def getAxis(number):
-    # when nothing is moved on an axis, the VALUE IS NOT EXACTLY ZERO
-    # so this is used not "if joystick value not zero"
-    if joystick.get_axis(number) < -0.1 or joystick.get_axis(number) > 0.1:
-      # value between 1.0 and -1.0
-      print ("Axis value is %s" %(joystick.get_axis(number)))
-      print ("Axis ID is %s" %(number))
- 
-def getButton(number):
-    # returns 1 or 0 - pressed or not
-    if joystick.get_button(number):
-      # just prints id of button
-      print ("Button ID is %s" %(number))
+b = 0 #lights state
+m = 0 #mode button
+x = 0 #hat
+y = 0 #hat
 
-def getHat(number):
-    if joystick.get_hat(number) != (0,0):
-      # returns tuple with values either 1, 0 or -1
-      print ("Hat value is %s, %s" %(joystick.get_hat(number)[0],joystick.get_hat(number)[1]))
-      print ("Hat ID is %s" %(number))
+def set_leds():
+	if GPIO.input(ledPinR) == 0: #leds on
+		GPIO.output(ledPinR, GPIO.HIGH)
+		GPIO.output(ledPinL, GPIO.HIGH)
+	elif GPIO.input(ledPinR) == 1: #leds off
+		GPIO.output(ledPinR, GPIO.LOW)
+		GPIO.output(ledPinL, GPIO.LOW)
 
-#hat values
-x=0
-y=0
-
-forward = 'f\n'
-backward = 'b\n'
-right = 'r\n'
-left = 'l\n'
-
-keyF = 'n' #indicates north direction
-keyB = 's' #indicates south direction
-keyR = 'e' #indicates east direction
-keyL = 'w' #indicates west direction
-
-end = 'k' #indicates end of string
-
-line = '\n'
-
-l = 0 #left analog
-r = 0 #right analog
-
-while True:
-	for event in pygame.event.get():
-		if hats != 0:
-			for i in range(hats):
-				x = joystick.get_hat(i)[0]
-				y = joystick.get_hat(i)[1]
-		if axes != 0:
-			l = joystick.get_axis(1)*-100
-			r = joystick.get_axis(3)*100
-	l = int(l)
-	r = int(r)
-
-	if l>0:
-		ser.write(keyF.encode())	#write north key
-		ser.write(chr(l).encode())	#write north value
-
-		if r>0:
-			ser.write(keyR.encode())	#write east key
-			ser.write(chr(r).encode())	#write east value
-			ser.write(end.encode())		#write end char
-			ser.write(line.encode())	#write new line
-		elif r<0:
-			r = r*-1
-			ser.write(keyL.encode())	#write west key
-			ser.write(chr(r).encode())	#write west value
-			ser.write(end.encode())		#write end char
-			ser.write(line.encode())	#write new line
-		else:
-			ser.write(end.encode())         #write end char
-			ser.write(line.encode())        #write new line
-
-	elif l<0:
-		l = l*-1
-		ser.write(keyB.encode())        #write south key
-		ser.write(chr(l).encode())      #write south value
-
-		if r>0:
-			ser.write(keyR.encode())        #write east key
-			ser.write(chr(r).encode())      #write east value
-			ser.write(end.encode())         #write end char
-			ser.write(line.encode())        #write new line
-		elif r<0:
-			r = r*-1
-			ser.write(keyL.encode())        #write west key
-			ser.write(chr(r).encode())      #write west value
-			ser.write(end.encode())         #write end char
-			ser.write(line.encode())        #write new line
-		else:
-			ser.write(end.encode())         #write end char
-			ser.write(line.encode())        #write new line
-
-#	print(l,r)
-
+def move(x,y):
 	#forward
 	if (x==0) and (y==1):
 		ser.write(forward.encode())
@@ -140,9 +72,94 @@ while True:
 		ser.write(backward.encode())
 	#right
 	elif (x==1) and (y==0):
-                ser.write(right.encode())
+		ser.write(right.encode())
 	#left
 	elif (x==-1) and (y==0):
-                ser.write(left.encode())
+		ser.write(left.encode())
+	#stop
+	elif (x==-1) and (y==0):
+		ser.write(stop.encode())
 
-#	time.sleep(1)
+#direction string
+forward = 'f\n'
+backward = 'b\n'
+right = 'r\n'
+left = 'l\n'
+stop = 's\n'
+
+#dilation and erosion kernels
+kernelOpen = np.ones((5, 5))
+kernelClose = np.ones((20, 20))
+
+#video camera object
+cam = cv2.VideoCapture(0)
+
+#mode 1 = normal RC, mode -1= feature tracking
+mode_state = 1
+
+# define limits for red color range we want
+redLower = np.array([0, 50, 80])
+redUpper = np.array([10, 255, 255])
+reddishLower = np.array([170, 80, 70])
+reddishUpper = np.array([255, 255, 220])
+
+#camera initial values
+initial_area = 0
+area = 0
+frame_counter = -1
+
+while True:
+	for event in pygame.event.get():
+		x = joystick.get_hat(0)[0]
+		y = joystick.get_hat(0)[1]
+		b = joystick.get_button(2) #triangle button
+		m = joystick.get_button(9) #mode
+
+	if b == 1:
+		set_leds() #toggle led
+		time.sleep(0.2) #for button debounce
+	if m == 1:
+		mode_state *= -1
+		frame_counter = -1
+		time.sleep(0.2) #for button debounce
+
+	if mode_state == 1:
+		move(x,y)
+
+	elif mode_state == -1:
+		ret_val, image = cam.read()
+
+		frame_counter += 1
+
+		hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+
+		redthreshold = cv2.inRange(hsv, redLower, redUpper)
+		reddishthreshold = cv2.inRange(hsv, reddishLower, reddishUpper)
+
+		# red has hues between 0-10 and there are pinkish hues in the 200s so we combine both
+		output = cv2.bitwise_or(redthreshold, reddishthreshold)
+
+		#dilate and erode
+		output = cv2.morphologyEx(output, cv2.MORPH_OPEN, kernelOpen)
+		output = cv2.morphologyEx(output, cv2.MORPH_CLOSE, kernelClose)
+
+		cnts, hierarchy = cv2.findContours(output, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+
+		if len(cnts) != 0:
+
+			greatest_cnt = max(cnts, key = cv2.contourArea)
+
+			area = cv2.contourArea(greatest_cnt)
+
+			if frame_counter == 0:
+				initial_area = area
+
+			if area < initial_area:
+				move(0,1)
+				print("moving forward")
+			else:
+				move(0,0)
+				print("stop")
+
+			print(area, initial_area)
+
