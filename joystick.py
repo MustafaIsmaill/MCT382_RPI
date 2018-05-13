@@ -42,13 +42,13 @@ def getHat(number):
 while True:
 	for event in pygame.event.get():
 	# loop through events
-#		if axes != 0:
-#			for i in range(axes):
-#				getAxis(i)
+		if axes != 0:
+			for i in range(axes):
+				getAxis(i)
 #		if buttons != 0:
 #     			for i in range(buttons):
 #        			getButton(i)
 #		if hats != 0:
- #     			for i in range(hats):
-  #      			getHat(i)
-		print(joystick.get_hat(0)[0], joystick.get_hat(0)[1])
+#     			for i in range(hats):
+#      			getHat(i)
+#		print(joystick.get_hat(0)[0], joystick.get_hat(0)[1])
