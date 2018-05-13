@@ -91,6 +91,9 @@ def move(x,y,l,r):
 			l += '\n'
 			ser.write(backward)
 			ser.write(l)
+		else:
+			ser.write(stop)
+			ser.write(stop)
 
 	#constant speed mode
 	else:
@@ -160,11 +163,11 @@ while True:
 
 	if b == 1:
 		set_leds() #toggle led
-		time.sleep(0.2) #for button debounce
+		sleep(0.2) #for button debounce
 	if m == 1:
 		frame_counter = -1
 		mode_state *= -1
-		time.sleep(0.2) #for button debounce
+		sleep(0.2) #for button debounce
 
 	if mode_state == 1:
 		move(x1, y1, l, r)
